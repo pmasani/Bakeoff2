@@ -21,12 +21,14 @@ float logoY = 500;
 float logoZ = 50f;
 float logoRotation = 0;
 
+// Variables for dragging
+boolean dragging = false;
+float dragOffsetX = 0;
+float dragOffsetY = 0;
 
-// New variables for drag functionality
-boolean isDragging = false;
-float offsetX, offsetY;
-
-
+// Variables to prevent accidental clicks during drag
+boolean clickCandidate = false;
+float clickStartX, clickStartY;
 
 private class Destination
 {
@@ -42,7 +44,7 @@ void setup() {
   size(1000, 800);  
   rectMode(CENTER);
   textFont(createFont("Arial", inchToPix(.3f))); //sets the font to Arial that is 0.3" tall
-  textAlign(CENTER);
+  textAlign(CENTER, CENTER);
   rectMode(CENTER); //draw rectangles not from upper left, but from the center outwards
   
   //don't change this! 
@@ -67,11 +69,13 @@ void setup() {
 
 void draw() {
 
-  background(40); // background is dark grey
+  background(40); //background is dark grey
   fill(200);
   noStroke();
 
-  if (userDone) {
+  //shouldn't really modify this printout code unless there is a really good reason to
+  if (userDone)
+  {
     text("User completed " + trialCount + " trials", width/2, inchToPix(.4f));
     text("User had " + errorCount + " error(s)", width/2, inchToPix(.4f)*2);
     text("User took " + (finishTime-startTime)/1000f/trialCount + " sec per destination", width/2, inchToPix(.4f)*3);
@@ -96,114 +100,162 @@ void draw() {
     popMatrix();
   }
 
+  //===========HANDLE DRAGGING=================
+  if (dragging) {
+    logoX = mouseX + dragOffsetX;
+    logoY = mouseY + dragOffsetY;
+  }
 
-  // Draw blue square with drag functionality
+  //===========DRAW LOGO SQUARE=================
   pushMatrix();
-  translate(logoX, logoY); // center the draw location on the blue square
-  rotate(radians(logoRotation)); // rotate if needed
+  translate(logoX, logoY); //translate draw center to the center of the logo square
+  rotate(radians(logoRotation)); //rotate using the logo square as the origin
   noStroke();
   fill(60, 60, 192, 192);
   rect(0, 0, logoZ, logoZ);
   popMatrix();
 
-  //===========DRAW EXAMPLE CONTROLS=================
+  //===========DRAW CONTROLS=================
   fill(255);
   scaffoldControlLogic(); //you are going to want to replace this!
   text("Trial " + (trialIndex+1) + " of " +trialCount, width/2, inchToPix(.8f));
 }
 
-//my example design for control, which is terrible
-void scaffoldControlLogic()
-{
-  //upper left corner, rotate counterclockwise
-  text("CCW", inchToPix(.4f), inchToPix(.4f));
-  if (mousePressed && dist(0, 0, mouseX, mouseY)<inchToPix(.8f))
-    logoRotation--;
+// Function to check if the mouse is over the logo square
+boolean isMouseOverLogo() {
+  float dx = mouseX - logoX;
+  float dy = mouseY - logoY;
 
-  //upper right corner, rotate clockwise
-  text("CW", width-inchToPix(.4f), inchToPix(.4f));
-  if (mousePressed && dist(width, 0, mouseX, mouseY)<inchToPix(.8f))
-    logoRotation++;
+  float angle = radians(-logoRotation);
+  float cosA = cos(angle);
+  float sinA = sin(angle);
 
-  //lower left corner, decrease Z
-  text("-", inchToPix(.4f), height-inchToPix(.4f));
-  if (mousePressed && dist(0, height, mouseX, mouseY)<inchToPix(.8f))
-    logoZ = constrain(logoZ-inchToPix(.02f), .01, inchToPix(4f)); //leave min and max alone!
+  float localX = dx * cosA - dy * sinA;
+  float localY = dx * sinA + dy * cosA;
 
-  //lower right corner, increase Z
-  text("+", width-inchToPix(.4f), height-inchToPix(.4f));
-  if (mousePressed && dist(width, height, mouseX, mouseY)<inchToPix(.8f))
-    logoZ = constrain(logoZ+inchToPix(.02f), .01, inchToPix(4f)); //leave min and max alone! 
+  float halfSize = logoZ / 2;
 
-  //left middle, move left
-  text("left", inchToPix(.4f), height/2);
-  if (mousePressed && dist(0, height/2, mouseX, mouseY)<inchToPix(.8f))
-    logoX-=inchToPix(.02f);
-
-  text("right", width-inchToPix(.4f), height/2);
-  if (mousePressed && dist(width, height/2, mouseX, mouseY)<inchToPix(.8f))
-    logoX+=inchToPix(.02f);
-
-  text("up", width/2, inchToPix(.4f));
-  if (mousePressed && dist(width/2, 0, mouseX, mouseY)<inchToPix(.8f))
-    logoY-=inchToPix(.02f);
-
-  text("down", width/2, height-inchToPix(.4f));
-  if (mousePressed && dist(width/2, height, mouseX, mouseY)<inchToPix(.8f))
-    logoY+=inchToPix(.02f);
+  if (abs(localX) <= halfSize && abs(localY) <= halfSize) {
+    return true;
+  } else {
+    return false;
+  }
 }
 
-// Update mousePressed to initiate drag if clicked inside the blue square
-void mousePressed() {
-  if (dist(mouseX, mouseY, logoX, logoY) < logoZ / 2) {
-    isDragging = true;
-    offsetX = logoX - mouseX;
-    offsetY = logoY - mouseY;
-  }
+// Function to check if mouse is over a rectangle (for buttons)
+boolean mouseOverRect(float x, float y, float w, float h) {
+  return (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h);
+}
 
-  if (startTime == 0) { // start time on the first click
+// Updated control logic with buttons moved closer together
+void scaffoldControlLogic()
+{
+  float buttonSize = inchToPix(0.8f);
+  float buttonSpacing = inchToPix(0.1f);
+
+  float baseX = width - buttonSize - buttonSpacing;
+  float baseY = height - buttonSize - buttonSpacing;
+
+  textAlign(CENTER, CENTER);
+
+  // Button [+]
+  float plusX = baseX - buttonSize - buttonSpacing;
+  float plusY = baseY - buttonSize - buttonSpacing;
+  fill(100);
+  rect(plusX + buttonSize / 2, plusY + buttonSize / 2, buttonSize, buttonSize);
+  fill(255);
+  text("+", plusX + buttonSize / 2, plusY + buttonSize / 2);
+  if (mousePressed && mouseOverRect(plusX, plusY, buttonSize, buttonSize))
+    logoZ = constrain(logoZ+inchToPix(.02f), .01, inchToPix(4f)); //leave min and max alone!
+
+  // Button [-]
+  float minusX = baseX - buttonSize - buttonSpacing;
+  float minusY = baseY;
+  fill(100);
+  rect(minusX + buttonSize / 2, minusY + buttonSize / 2, buttonSize, buttonSize);
+  fill(255);
+  text("-", minusX + buttonSize / 2, minusY + buttonSize / 2);
+  if (mousePressed && mouseOverRect(minusX, minusY, buttonSize, buttonSize))
+    logoZ = constrain(logoZ-inchToPix(.02f), .01, inchToPix(4f)); //leave min and max alone!
+
+  // Button [CW]
+  float cwX = baseX;
+  float cwY = baseY - buttonSize - buttonSpacing;
+  fill(100);
+  rect(cwX + buttonSize / 2, cwY + buttonSize / 2, buttonSize, buttonSize);
+  fill(255);
+  text("CW", cwX + buttonSize / 2, cwY + buttonSize / 2);
+  if (mousePressed && mouseOverRect(cwX, cwY, buttonSize, buttonSize))
+    logoRotation++;
+
+  // Button [CCW]
+  float ccwX = baseX;
+  float ccwY = baseY;
+  fill(100);
+  rect(ccwX + buttonSize / 2, ccwY + buttonSize / 2, buttonSize, buttonSize);
+  fill(255);
+  text("CCW", ccwX + buttonSize / 2, ccwY + buttonSize / 2);
+  if (mousePressed && mouseOverRect(ccwX, ccwY, buttonSize, buttonSize))
+    logoRotation--;
+}
+
+void mousePressed()
+{
+  if (startTime == 0) //start time on the instant of the first user click
+  {
     startTime = millis();
     println("time started!");
+  }
+
+  if (isMouseOverLogo()) {
+    dragging = true;
+    dragOffsetX = logoX - mouseX;
+    dragOffsetY = logoY - mouseY;
+  } else {
+    clickCandidate = true;
+    clickStartX = mouseX;
+    clickStartY = mouseY;
+  }
+}
+
+void mouseDragged() {
+  if (clickCandidate) {
+    if (dist(mouseX, mouseY, clickStartX, clickStartY) > inchToPix(0.1f)) {
+      clickCandidate = false; // Not a click, mouse moved too much
+    }
   }
 }
 
 void mouseReleased()
 {
-  
-  isDragging = false;
-  
-  //check to see if user clicked middle of screen within 3 inches, which this code uses as a submit button
-  if (dist(width/2, height/2, mouseX, mouseY)<inchToPix(3f))
-  {
-    if (userDone==false && !checkForSuccess())
-      errorCount++;
-
-    trialIndex++; //and move on to next trial
-
-    if (trialIndex==trialCount && userDone==false)
+  if (dragging) {
+    dragging = false;
+  } else if (clickCandidate) {
+    clickCandidate = false;
+    //check to see if user clicked middle of screen within 3 inches, which this code uses as a submit button
+    if (dist(width/2, height/2, mouseX, mouseY)<inchToPix(3f))
     {
-      userDone = true;
-      finishTime = millis();
+      if (userDone==false && !checkForSuccess())
+        errorCount++;
+
+      trialIndex++; //and move on to next trial
+
+      if (trialIndex==trialCount && userDone==false)
+      {
+        userDone = true;
+        finishTime = millis();
+      }
     }
-  }
-}
-
-
-// Track mouse dragging and update the square's position
-void mouseDragged() {
-  if (isDragging) {
-    logoX = mouseX + offsetX;
-    logoY = mouseY + offsetY;
   }
 }
 
 //probably shouldn't modify this, but email me if you want to for some good reason.
 public boolean checkForSuccess()
 {
-  Destination d = destinations.get(trialIndex);	
+  Destination d = destinations.get(trialIndex);  
   boolean closeDist = dist(d.x, d.y, logoX, logoY)<inchToPix(.05f); //has to be within +-0.05"
   boolean closeRotation = calculateDifferenceBetweenAngles(d.rotation, logoRotation)<=5;
-  boolean closeZ = abs(d.z - logoZ)<inchToPix(.1f); //has to be within +-0.1"	
+  boolean closeZ = abs(d.z - logoZ)<inchToPix(.1f); //has to be within +-0.1"  
 
   println("Close Enough Distance: " + closeDist + " (logo X/Y = " + d.x + "/" + d.y + ", destination X/Y = " + logoX + "/" + logoY +")");
   println("Close Enough Rotation: " + closeRotation + " (rot dist="+calculateDifferenceBetweenAngles(d.rotation, logoRotation)+")");
